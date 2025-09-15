@@ -31,6 +31,7 @@ internal static class AbstractionMapper
 			return null;
 
 		var chatMessage = ToChatMessage(stream.Message);
+		chatMessage.CreatedAt = stream.CreatedAt;
 
 		return new ChatResponse(chatMessage)
 		{
@@ -168,18 +169,18 @@ internal static class AbstractionMapper
 	/// </returns>
 	private static object? ToOllamaSharpTool(AITool tool)
 	{
-		if (tool is AIFunction f)
+		if (tool is AIFunctionDeclaration f)
 			return ToOllamaSharpTool(f);
 
 		return null;
 	}
 
 	/// <summary>
-	/// Converts an <see cref="AIFunction"/> to a <see cref="Tool"/>.
+	/// Converts an <see cref="AIFunctionDeclaration"/> to a <see cref="Tool"/>.
 	/// </summary>
 	/// <param name="function">The function to convert.</param>
 	/// <returns>A <see cref="Tool"/> object containing the converted data.</returns>
-	private static Tool ToOllamaSharpTool(AIFunction function)
+	private static Tool ToOllamaSharpTool(AIFunctionDeclaration function)
 	{
 		JsonElement transformedSchema = _schemaTransformCache.GetOrCreateTransformedSchema(function);
 		return new Tool
@@ -274,7 +275,7 @@ internal static class AbstractionMapper
 	/// <returns>A string containing the base64 image data.</returns>
 	private static string ToOllamaImage(DataContent content)
 	{
-		return Convert.ToBase64String(content.Data.ToArray());
+		return content.Base64Data.ToString();
 	}
 
 	/// <summary>
@@ -339,9 +340,14 @@ internal static class AbstractionMapper
 	/// <returns>A <see cref="ChatResponseUpdate"/> object containing the latest chat completion chunk.</returns>
 	public static ChatResponseUpdate ToChatResponseUpdate(ChatResponseStream? response, string responseId)
 	{
+		var contents = response?.Message is null ? [new TextContent(string.Empty)] : 
+			GetAIContentsFromMessage(response.Message);
+		
 		if (response is ChatDoneResponseStream done)
 		{
-			return new ChatResponseUpdate(ToAbstractionRole(done.Message.Role), [new UsageContent(ParseOllamaChatResponseUsage(done))])
+			contents.Add(new UsageContent(ParseOllamaChatResponseUsage(done)));
+			
+			return new ChatResponseUpdate(ToAbstractionRole(done.Message.Role), contents)
 			{
 				CreatedAt = done.CreatedAt,
 				FinishReason = done.DoneReason is null ? null : new ChatFinishReason(done.DoneReason),
@@ -350,9 +356,7 @@ internal static class AbstractionMapper
 				ModelId = done.Model
 			};
 		}
-
-		var contents = response?.Message is null ? [new TextContent(string.Empty)] : GetAIContentsFromMessage(response.Message);
-
+		
 		return new ChatResponseUpdate(ToAbstractionRole(response?.Message.Role), contents)
 		{
 			// no need to set "Contents" as we set the text
