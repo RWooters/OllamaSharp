@@ -85,7 +85,12 @@ public class Chat
 	/// This might cause errors with non-reasoning models, see https://github.com/awaescher/OllamaSharp/releases/tag/5.2.0
 	/// More information: https://github.com/ollama/ollama/releases/tag/v0.9.0
 	/// </summary>
-	public bool? Think { get; set; }
+	public ThinkValue? Think { get; set; }
+
+	/// <summary>
+	/// Allow recursive tool calls when a model decides to call different tools after each other.
+	/// </summary>
+	public bool AllowRecursiveToolCalls { get; set; } = true;
 
 	/// <summary>
 	/// Initializes a new instance of the <see cref="Chat"/> class.
@@ -440,7 +445,7 @@ public class Chat
 			messageBuilder.Append(answer);
 
 			// yield the message content or call the delegate to handle thinking
-			var isThinking = Think == true && !string.IsNullOrEmpty(answer.Message.Thinking);
+			var isThinking = (bool?)Think == true && !string.IsNullOrEmpty(answer.Message.Thinking);
 			if (isThinking)
 				OnThink?.Invoke(this, answer.Message.Thinking!);
 			else
@@ -452,10 +457,11 @@ public class Chat
 			var answerMessage = messageBuilder.ToMessage();
 			Messages.Add(answerMessage);
 
-			if (ToolInvoker is not null && role != ChatRole.Tool)
+			// support recursive tool calls when a model decides to call tools several times in a row
+			if (ToolInvoker is not null && answerMessage.ToolCalls?.Any() == true && AllowRecursiveToolCalls)
 			{
 				var toolResultMessages = new List<Message>();
-				foreach (var toolCall in answerMessage.ToolCalls ?? [])
+				foreach (var toolCall in answerMessage.ToolCalls)
 				{
 					// call tools if available and requested by the AI model and yield the results
 					OnToolCall?.Invoke(this, toolCall);
