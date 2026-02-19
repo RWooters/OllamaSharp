@@ -319,15 +319,15 @@ public class OllamaApiClient : IOllamaApiClient, IChatClient, IEmbeddingGenerato
 		var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
 		using var reader = new StreamReader(stream);
 
-		while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
+		while (!cancellationToken.IsCancellationRequested)
 		{
-			var line = await reader.ReadLineAsync().ConfigureAwait(false) ?? "";
+			var line = await reader.ReadLineAsync().ConfigureAwait(false);
+			if (line == null)
+				break;
 
 			var error = JsonSerializer.Deserialize<ErrorResponse?>(line, IncomingJsonSerializerOptions);
-			if ((error?.Message ?? null) is not null)
-			{
-				throw new ResponseError(error.Message);
-			}
+			if (!string.IsNullOrEmpty(error?.Message))
+				throw new ResponseError(error!.Message);
 
 			yield return JsonSerializer
 				.Deserialize<TLine?>(
@@ -342,9 +342,11 @@ public class OllamaApiClient : IOllamaApiClient, IChatClient, IEmbeddingGenerato
 		using var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
 		using var reader = new StreamReader(stream);
 
-		while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
+		while (!cancellationToken.IsCancellationRequested)
 		{
-			var line = await reader.ReadLineAsync().ConfigureAwait(false) ?? "";
+			var line = await reader.ReadLineAsync().ConfigureAwait(false);
+			if (line == null)
+				break;
 			var streamedResponse = JsonSerializer.Deserialize<GenerateResponseStream>(line, IncomingJsonSerializerOptions);
 
 			yield return streamedResponse?.Done ?? false
@@ -358,9 +360,11 @@ public class OllamaApiClient : IOllamaApiClient, IChatClient, IEmbeddingGenerato
 		using var stream = await response.Content.ReadAsStreamAsync().ConfigureAwait(false);
 		using var reader = new StreamReader(stream);
 
-		while (!reader.EndOfStream && !cancellationToken.IsCancellationRequested)
+		while (!cancellationToken.IsCancellationRequested)
 		{
-			var line = await reader.ReadLineAsync().ConfigureAwait(false) ?? "";
+			var line = await reader.ReadLineAsync().ConfigureAwait(false);
+			if (line == null)
+				break;
 			var streamedResponse = JsonSerializer.Deserialize<ChatResponseStream>(line, IncomingJsonSerializerOptions);
 
 			yield return streamedResponse?.Done ?? false

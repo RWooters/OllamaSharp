@@ -12,6 +12,10 @@ namespace OllamaSharp;
 [Generator]
 public class ToolSourceGenerator : IIncrementalGenerator
 {
+	/// <summary>
+	/// Registers the incremental generation steps for discovering methods annotated with <c>OllamaTool</c>.
+	/// </summary>
+	/// <param name="context">The initialization context provided by the compiler.</param>
 	public void Initialize(IncrementalGeneratorInitializationContext context)
 	{
 		var methodCandidates = context.SyntaxProvider
@@ -247,7 +251,7 @@ public class ToolSourceGenerator : IIncrementalGenerator
 					if (p.IsOptional)
 					{
 						var def = p.ExplicitDefaultValue is null ? "\"\"" : $"\"{p.ExplicitDefaultValue}\"";
-						paramLines.Add($@"            {pType} {safeName} = ({pType}?)args[""{pName}""] ?? {def};");
+						paramLines.Add($@"            {pType} {safeName} = ({pType}?)(args.ContainsKey(""{pName}"") ? args[""{pName}""] : null) ?? {def};");
 					}
 					else
 					{
@@ -257,7 +261,7 @@ public class ToolSourceGenerator : IIncrementalGenerator
 				else
 				{
 					if (p.IsOptional && p.ExplicitDefaultValue != null)
-						paramLines.Add($@"            {pType} {safeName} = ({pType}?)args[""{pName}""] ?? ({pType}){p.ExplicitDefaultValue};");
+						paramLines.Add($@"            {pType} {safeName} = ({pType}?)(args.ContainsKey(""{pName}"") ? args[""{pName}""] : null) ?? ({pType}){p.ExplicitDefaultValue};");
 					else
 						paramLines.Add($@"            {pType} {safeName} = ({pType}?)args[""{pName}""];");
 				}

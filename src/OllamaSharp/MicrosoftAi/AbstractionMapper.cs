@@ -340,13 +340,15 @@ internal static class AbstractionMapper
 	/// <returns>A <see cref="ChatResponseUpdate"/> object containing the latest chat completion chunk.</returns>
 	public static ChatResponseUpdate ToChatResponseUpdate(ChatResponseStream? response, string responseId)
 	{
-		var contents = response?.Message is null ? [new TextContent(string.Empty)] : 
+		var contents = response?.Message is null ? [new TextContent(string.Empty)] :
 			GetAIContentsFromMessage(response.Message);
-		
+
 		if (response is ChatDoneResponseStream done)
 		{
-			contents.Add(new UsageContent(ParseOllamaChatResponseUsage(done)));
-			
+			var usage = ParseOllamaChatResponseUsage(done);
+			if (usage is not null)
+				contents.Add(new UsageContent(usage));
+
 			return new ChatResponseUpdate(ToAbstractionRole(done.Message.Role), contents)
 			{
 				CreatedAt = done.CreatedAt,
@@ -356,8 +358,8 @@ internal static class AbstractionMapper
 				ModelId = done.Model
 			};
 		}
-		
-		return new ChatResponseUpdate(ToAbstractionRole(response?.Message.Role), contents)
+
+		return new ChatResponseUpdate(ToAbstractionRole(response?.Message?.Role), contents)
 		{
 			// no need to set "Contents" as we set the text
 			CreatedAt = response?.CreatedAt,
@@ -491,6 +493,7 @@ internal static class AbstractionMapper
 	{
 		var request = new EmbedRequest()
 		{
+			Dimensions = options?.Dimensions,
 			Input = values.ToList(),
 			Model = options?.ModelId ?? "" // will be set OllamaApiClient.SelectedModel if not set
 		};
@@ -502,9 +505,6 @@ internal static class AbstractionMapper
 
 			if (requestProps.TryGetValue(Application.Truncate, out bool truncate))
 				request.Truncate = truncate;
-
-			if (requestProps.TryGetValue(Application.Dimensions, out int? dimensions))
-				request.Dimensions = dimensions;
 		}
 
 		return request;
