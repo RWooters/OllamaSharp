@@ -128,6 +128,37 @@ await foreach (var answerToken in chat.SendAsync("How's the weather in Stuttgart
 
 OllamaSharp will automatically match tool calls from the AI model with the provided tools, call the tools and return results back into the chat so that the AI model can continue.
 
+#### Recursive tool calls
+
+By default, when a model responds with a tool call, OllamaSharp invokes the tool, feeds the result back and lets the model continue — potentially calling more tools. This is controlled by the `AllowRecursiveToolCalls` property (default: `true`):
+
+``` csharp
+var chat = new Chat(...)
+{
+    AllowRecursiveToolCalls = false // disable automatic chaining of tool calls
+};
+```
+
+#### Monitoring tool calls
+
+Use the `OnToolCall` and `OnToolResult` events to observe tool activity:
+
+``` csharp
+chat.OnToolCall += (_, call) => Console.WriteLine($"Model wants to call: {call.Function?.Name}");
+chat.OnToolResult += (_, result) => Console.WriteLine($"Tool returned: {result.Result}");
+```
+
+#### Custom tool invocation
+
+The `Chat` class uses an `IToolInvoker` to invoke tools. The default implementation (`DefaultToolInvoker`) handles argument normalisation and dispatches to `IInvokableTool` or `IAsyncInvokableTool` implementations. You can replace it with your own implementation for custom behaviour like logging, caching or error handling:
+
+``` csharp
+var chat = new Chat(...)
+{
+    ToolInvoker = new MyCustomToolInvoker()
+};
+```
+
 #### Important details
 
  - the entire meta data definition from the json structure above will automatically be taken from the **method signature and its summary**, this includes
@@ -157,15 +188,16 @@ OllamaSharp will automatically match tool calls from the AI model with the provi
   - only available for C#. Visual Basic and F# are not supported <sup>**_not planned_**</sup>
 
  > The project containing the Ollama tools must generate a documentation file, see "Important details".
+
+> [!IMPORTANT]
+> Add `<GenerateDocumentationFile>true</GenerateDocumentationFile>` to your project file, otherwise tool descriptions from XML doc comments will be lost after compilation.
  
 ## Model context protocol (MCP) servers
 
-OllamaSharp also supports the [model context protocol](https://modelcontextprotocol.io/introduction). In the past, we shipped a small package `OllamaSharp.ModelContextProtocol` for this but we discontinued it because of the quickly evolving nature of the MCP standard. 
-
-Instead, we highly recommend using the [official C# SDK](https://github.com/modelcontextprotocol/csharp-sdk) in combination with OllamaSharp or libraries that build upon OllamaSharp such as [Semantic Kernel or the Microsoft Agent Framework](https://devblogs.microsoft.com/semantic-kernel/semantic-kernel-and-microsoft-agent-framework/).
+For the latest guidance, we recommend the [official C# MCP SDK](https://github.com/modelcontextprotocol/csharp-sdk) in combination with OllamaSharp, or frameworks that build upon OllamaSharp such as [Semantic Kernel or the Microsoft Agent Framework](https://devblogs.microsoft.com/semantic-kernel/semantic-kernel-and-microsoft-agent-framework/).
 
 The community made some samples how to combine the MCP SDK with OllamaSharp
 - [Invoke MCP tool from local LLM using OllamaSharp](https://www.youtube.com/watch?v=NBlIZ2TlHsU)
 - [Tiny code sample by @strabu](https://github.com/strabu/ollama-mcp-csharp/blob/3ed3f587e15dec94a67fa2bceea191e3a6da5e73/src/OllamaPlaywrightMCPExample/Program.cs#L1)
 
-For larger projects, we recommend using frameworks like Semantic Kernel instead of OllamaSharp directly. Semantic Kernel is a huge library maintained by Microsoft and makes use of OllamaSharp behind the scenes when talking to Ollama endpoints. Once you moved to Semantic Kernel (+OllamaSharp), you can find a lot of resources and further extensions. A broad support for MCP is one of the benefits as well as countless resources like the following, for example: [Building a Model Context Protocol Server with Semantic Kernel](https://devblogs.microsoft.com/semantic-kernel/building-a-model-context-protocol-server-with-semantic-kernel/).
+For larger projects, we recommend using frameworks like Semantic Kernel or Microsoft Agent Framework instead of OllamaSharp directly. Both libraries are maintained by Microsoft and make use of OllamaSharp behind the scenes when talking to Ollama endpoints. Once you moved to Semantic Kernel (+OllamaSharp), you can find a lot of resources and further extensions. A broad support for MCP is one of the benefits as well as countless resources like the following, for example: [Building a Model Context Protocol Server with Semantic Kernel](https://devblogs.microsoft.com/semantic-kernel/building-a-model-context-protocol-server-with-semantic-kernel/).

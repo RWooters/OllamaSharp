@@ -252,19 +252,52 @@ public class AbstractionMapperTests
 
 			var chatRequest = AbstractionMapper.ToOllamaSharpChatRequest(null, chatMessages, options, stream: true, JsonSerializerOptions.Default);
 
-			var tool = (Tool)chatRequest.Tools.Single();
-			tool.Function.Description.ShouldBe("Gets the current weather for a current location");
-			tool.Function.Name.ShouldBe("get_weather");
-			tool.Function.Parameters.Properties.Count.ShouldBe(2);
-			tool.Function.Parameters.Properties["city"].Description.ShouldBe("The city to get the weather for");
-			tool.Function.Parameters.Properties["city"].Enum.ShouldBeNull();
-			tool.Function.Parameters.Properties["city"].Type.ShouldBe("string");
-			tool.Function.Parameters.Properties["unit"].Description.ShouldBe("The unit to calculate the current temperature to");
-			tool.Function.Parameters.Properties["unit"].Enum.ShouldBeNull();
-			tool.Function.Parameters.Properties["unit"].Type.ShouldBe("string");
-			tool.Function.Parameters.Required.ShouldBe(["city"], ignoreOrder: true);
-			tool.Function.Parameters.Type.ShouldBe("object");
-			tool.Type.ShouldBe("function");
+			var toolJson = JsonSerializer.SerializeToElement(chatRequest.Tools.Single());
+			toolJson.GetProperty("type").GetString().ShouldBe("function");
+			toolJson.GetProperty("function").GetProperty("description").GetString().ShouldBe("Gets the current weather for a current location");
+			toolJson.GetProperty("function").GetProperty("name").GetString().ShouldBe("get_weather");
+
+			var parameters = toolJson.GetProperty("function").GetProperty("parameters");
+			parameters.GetProperty("type").GetString().ShouldBe("object");
+			parameters.GetProperty("required").EnumerateArray().Select(e => e.GetString()).ShouldBe(["city"], ignoreOrder: true);
+
+			var properties = parameters.GetProperty("properties");
+			properties.GetProperty("city").GetProperty("description").GetString().ShouldBe("The city to get the weather for");
+			properties.GetProperty("city").GetProperty("type").GetString().ShouldBe("string");
+			properties.GetProperty("unit").GetProperty("description").GetString().ShouldBe("The unit to calculate the current temperature to");
+			properties.GetProperty("unit").GetProperty("type").GetString().ShouldBe("string");
+		}
+
+		/// <summary>
+		/// Verifies that tools with nullable parameters (where JSON schema type is an array) are handled correctly.
+		/// </summary>
+		[Test]
+		public void Maps_Messages_With_Tools_Nullable_Parameters()
+		{
+			var chatMessages = new List<Microsoft.Extensions.AI.ChatMessage>
+			{
+				new(Microsoft.Extensions.AI.ChatRole.User, "Filter files")
+			};
+
+			var options = new ChatOptions
+			{
+				Tools = [AIFunctionFactory.Create((
+					[System.ComponentModel.Description("The filter to apply")] string? filenameFilter) => "done",
+					"filter_files", "Filters files by name")],
+			};
+
+			// This should not throw - previously it crashed when Property.Type was an array like ["string", "null"]
+			var chatRequest = AbstractionMapper.ToOllamaSharpChatRequest(null, chatMessages, options, stream: true, JsonSerializerOptions.Default);
+
+			var toolJson = JsonSerializer.SerializeToElement(chatRequest.Tools.Single());
+			toolJson.GetProperty("type").GetString().ShouldBe("function");
+			toolJson.GetProperty("function").GetProperty("name").GetString().ShouldBe("filter_files");
+
+			var parameters = toolJson.GetProperty("function").GetProperty("parameters");
+			parameters.GetProperty("type").GetString().ShouldBe("object");
+
+			var filenameFilter = parameters.GetProperty("properties").GetProperty("filenameFilter");
+			filenameFilter.GetProperty("description").GetString().ShouldBe("The filter to apply");
 		}
 
 		/// <summary>
@@ -557,7 +590,7 @@ public class AbstractionMapperTests
 			{
 				FrequencyPenalty = 0.5f,
 				MaxOutputTokens = 1000,
-				ModelId = "llama3.1:405b",
+				ModelId = "qwen3.5:35b-a3b",
 				PresencePenalty = 0.3f,
 				ResponseFormat = ChatResponseFormat.Json,
 				Seed = 11,
@@ -569,7 +602,7 @@ public class AbstractionMapperTests
 			var chatRequest = AbstractionMapper.ToOllamaSharpChatRequest(null, chatMessages, options, stream: true, JsonSerializerOptions.Default);
 
 			chatRequest.Format.ShouldBe("json");
-			chatRequest.Model.ShouldBe("llama3.1:405b");
+			chatRequest.Model.ShouldBe("qwen3.5:35b-a3b");
 			chatRequest.Options.FrequencyPenalty.ShouldBe(0.5f);
 			chatRequest.Options.PresencePenalty.ShouldBe(0.3f);
 			chatRequest.Options.Stop.ShouldBe(["stop1", "stop2", "stop3"], ignoreOrder: true);
@@ -779,6 +812,74 @@ public class AbstractionMapperTests
 			ollamaRequest.Options.VocabOnly.Value.ShouldBeTrue();
 		}
 
+		/// <summary>
+		/// Verifies that ReasoningOptions.Output=None without Effort leaves Think as null.
+		/// </summary>
+		[Test]
+		public void Maps_Reasoning_Output_None_Disables_Think()
+		{
+			var options = new ChatOptions
+			{
+				Reasoning = new ReasoningOptions { Output = ReasoningOutput.None }
+			};
+
+			var request = AbstractionMapper.ToOllamaSharpChatRequest(null, [], options, stream: true, JsonSerializerOptions.Default);
+
+			request.Think.ShouldBeNull();
+		}
+
+		/// <summary>
+		/// Verifies that ReasoningOptions with effort maps to Ollama think levels.
+		/// </summary>
+		[TestCase(ReasoningEffort.Low, "low")]
+		[TestCase(ReasoningEffort.Medium, "medium")]
+		[TestCase(ReasoningEffort.High, "high")]
+		[TestCase(ReasoningEffort.ExtraHigh, "high")]
+		public void Maps_Reasoning_Effort_To_Think_Level(ReasoningEffort effort, string expectedThink)
+		{
+			var options = new ChatOptions
+			{
+				Reasoning = new ReasoningOptions { Effort = effort }
+			};
+
+			var request = AbstractionMapper.ToOllamaSharpChatRequest(null, [], options, stream: true, JsonSerializerOptions.Default);
+
+			request.Think.ShouldBe(expectedThink);
+		}
+
+		/// <summary>
+		/// Verifies that ReasoningOptions with no specific effort leaves Think as null.
+		/// </summary>
+		[Test]
+		public void Maps_Reasoning_Without_Effort_Enables_Think()
+		{
+			var options = new ChatOptions
+			{
+				Reasoning = new ReasoningOptions { Output = ReasoningOutput.Full }
+			};
+
+			var request = AbstractionMapper.ToOllamaSharpChatRequest(null, [], options, stream: true, JsonSerializerOptions.Default);
+
+			request.Think.ShouldBeNull();
+		}
+
+		/// <summary>
+		/// Verifies that Reasoning does not override a value set via RawRepresentationFactory.
+		/// </summary>
+		[Test]
+		public void Maps_Reasoning_Does_Not_Override_RawRepresentation()
+		{
+			var options = new ChatOptions
+			{
+				Reasoning = new ReasoningOptions { Effort = ReasoningEffort.High },
+				RawRepresentationFactory = _ => new ChatRequest { Think = false },
+			};
+
+			var request = AbstractionMapper.ToOllamaSharpChatRequest(new MockChatClient(), [], options, stream: true, JsonSerializerOptions.Default);
+
+			request.Think.ShouldBe(false);
+		}
+
 		private sealed class MockChatClient : IChatClient
 		{
 			public void Dispose() { }
@@ -813,7 +914,7 @@ public class AbstractionMapperTests
 				EvalDuration = 2222222222,
 				LoadDuration = 3333333333,
 				Message = new Message { Role = OllamaSharp.Models.Chat.ChatRole.Assistant, Content = "Hi." },
-				Model = "llama3.1:8b",
+				Model = "qwen3.5:35b-a3b",
 				PromptEvalCount = 411,
 				PromptEvalDuration = 5555555555,
 				TotalDuration = 6666666666
@@ -834,7 +935,7 @@ public class AbstractionMapperTests
 			response.Messages[0].Text.ShouldBe("Hi.");
 			response.Messages[0].Contents.Count.ShouldBe(1);
 			((TextContent)response.Messages[0].Contents[0]).Text.ShouldBe("Hi.");
-			response.ModelId.ShouldBe("llama3.1:8b");
+			response.ModelId.ShouldBe("qwen3.5:35b-a3b");
 			response.RawRepresentation.ShouldBe(stream);
 			response.ResponseId.ShouldBe(ollamaCreatedStamp);
 			response.Usage.ShouldNotBeNull();
@@ -862,7 +963,7 @@ public class AbstractionMapperTests
 				CreatedAt = ollamaCreated,
 				Done = true,
 				Message = new Message { Role = OllamaSharp.Models.Chat.ChatRole.Assistant, Content = "Hi." },
-				Model = "llama3.1:8b"
+				Model = "qwen3.5:35b-a3b"
 			};
 
 			var streamingChatCompletion = AbstractionMapper.ToChatResponseUpdate(stream, "12345");
@@ -892,7 +993,7 @@ public class AbstractionMapperTests
 				CreatedAt = ollamaCreated,
 				Done = true,
 				Message = new Message { Role = OllamaSharp.Models.Chat.ChatRole.Assistant, Content = "", Thinking = "Beer." },
-				Model = "llama3.1:8b"
+				Model = "qwen3.5:35b-a3b"
 			};
 
 			var streamingChatCompletion = AbstractionMapper.ToChatResponseUpdate(stream, "12345");
@@ -943,7 +1044,7 @@ public class AbstractionMapperTests
 				CreatedAt = ollamaCreated,
 				Done = true,
 				Message = message,
-				Model = "llama3.1:8b"
+				Model = "qwen3.5:35b-a3b"
 			};
 
 			var chatMessage = AbstractionMapper.ToChatResponseUpdate(stream, "12345");
@@ -965,6 +1066,67 @@ public class AbstractionMapperTests
 			chatMessage.RawRepresentation.ShouldBe(stream);
 			chatMessage.Role.ShouldBe(Microsoft.Extensions.AI.ChatRole.Assistant);
 			chatMessage.Text.ShouldBe("It seems the sun will be out all day.");
+		}
+
+		/// <summary>
+		/// Verifies that performance metrics from ChatDoneResponseStream (LoadDuration, TotalDuration, etc.) 
+		/// are correctly mapped to the AdditionalProperties dictionary.
+		/// </summary>
+		[Test]
+		public void Maps_Performance_Metrics_To_AdditionalProperties()
+		{
+			// Arrange
+			var ollamaCreated = new DateTimeOffset(2023, 08, 04, 08, 52, 19, 385, 406, TimeSpan.FromHours(-7));
+			var responseId = "test-response-67890";
+
+			var stream = new ChatDoneResponseStream
+			{
+				CreatedAt = ollamaCreated,
+				Done = true,
+				Message = new Message
+				{
+					Role = OllamaSharp.Models.Chat.ChatRole.Assistant,
+					Content = "Hello, world!",
+					Thinking = ""
+				},
+				Model = "qwen3.5:35b-a3b",
+
+				// Performance metrics to be mapped to AdditionalProperties
+				TotalDuration = 1_234_567_890,        // nanoseconds
+				LoadDuration = 123_456_789,           // nanoseconds
+				PromptEvalCount = 42,
+				PromptEvalDuration = 98_765_432,      // nanoseconds
+				EvalCount = 15,
+				EvalDuration = 876_543_210,           // nanoseconds
+				DoneReason = "stop"
+			};
+
+			// Act
+			var streamingChatCompletion = AbstractionMapper.ToChatResponseUpdate(stream, responseId);
+
+			// Assert - AdditionalProperties contains performance metrics
+			const double NANOSECONDS_PER_MILLISECOND = 1_000_000;
+
+			streamingChatCompletion.AdditionalProperties.ShouldNotBeNull();
+			streamingChatCompletion.AdditionalProperties.ShouldContainKey(Application.LoadDuration);
+			streamingChatCompletion.AdditionalProperties[Application.LoadDuration].ShouldBe(TimeSpan.FromMilliseconds(123_456_789 / NANOSECONDS_PER_MILLISECOND));
+
+			streamingChatCompletion.AdditionalProperties.ShouldContainKey(Application.TotalDuration);
+			streamingChatCompletion.AdditionalProperties[Application.TotalDuration].ShouldBe(TimeSpan.FromMilliseconds(1_234_567_890 / NANOSECONDS_PER_MILLISECOND));
+
+			streamingChatCompletion.AdditionalProperties.ShouldContainKey(Application.PromptEvalDuration);
+			streamingChatCompletion.AdditionalProperties[Application.PromptEvalDuration].ShouldBe(TimeSpan.FromMilliseconds(98_765_432 / NANOSECONDS_PER_MILLISECOND));
+
+			streamingChatCompletion.AdditionalProperties.ShouldContainKey(Application.EvalDuration);
+			streamingChatCompletion.AdditionalProperties[Application.EvalDuration].ShouldBe(TimeSpan.FromMilliseconds(876_543_210 / NANOSECONDS_PER_MILLISECOND));
+
+			var usageContent = streamingChatCompletion.Contents.OfType<UsageContent>().SingleOrDefault();
+			usageContent.ShouldNotBeNull();
+			usageContent.Details.ShouldNotBeNull();
+
+			usageContent.Details.InputTokenCount.ShouldBe(42);
+			usageContent.Details.OutputTokenCount.ShouldBe(15);
+			usageContent.Details.TotalTokenCount.ShouldBe(42 + 15);
 		}
 	}
 }

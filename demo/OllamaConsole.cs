@@ -57,11 +57,6 @@ public abstract class OllamaConsole(IOllamaApiClient ollama)
 	public static string START_NEW_COMMAND { get; } = "/new";
 
 	/// <summary>
-	/// Command to use the MCP server.
-	/// </summary>
-	public static string USE_MCP_SERVER_COMMAND { get; } = "/mcp";
-
-	/// <summary>
 	/// Command to list available tools.
 	/// </summary>
 	public static string LIST_TOOLS_COMMAND { get; } = "/tools";
@@ -149,7 +144,15 @@ public abstract class OllamaConsole(IOllamaApiClient ollama)
 	internal void ToggleThink()
 	{
 		// null -> false -> true -> null -> ...
-		Think = Think == null ? false : ((bool?)Think == false ? true : ((bool?)Think == true ? null : false));
+		SetThink(Think == null ? false : ((bool?)Think == false ? true : ((bool?)Think == true ? null : false)));
+	}
+
+	/// <summary>
+	/// Toggles the think mode between null, false, and true.
+	/// </summary>
+	internal void SetThink(object? value)
+	{
+		Think = new ThinkValue(value);
 		AnsiConsole.MarkupLine($"[{HintTextColor}]Think mode is [{AccentTextColor}]{Think?.ToString()?.ToLower() ?? "(null)"}[/].[/]");
 	}
 
